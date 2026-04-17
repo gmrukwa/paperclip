@@ -22,6 +22,12 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      "-c",
+      'shell_environment_policy.inherit="core"',
+      "-c",
+      "shell_environment_policy.ignore_default_excludes=true",
+      "-c",
+      'shell_environment_policy.include_only=["PAPERCLIP_*","AGENT_HOME","PWD","CODEX_HOME","HOME","PATH"]',
       "-",
     ]);
   });
@@ -40,6 +46,69 @@ describe("buildCodexExecArgs", () => {
       "--json",
       "--model",
       "gpt-5.3-codex",
+      "-c",
+      'shell_environment_policy.inherit="core"',
+      "-c",
+      "shell_environment_policy.ignore_default_excludes=true",
+      "-c",
+      'shell_environment_policy.include_only=["PAPERCLIP_*","AGENT_HOME","PWD","CODEX_HOME","HOME","PATH"]',
+      "-",
+    ]);
+  });
+
+  it("injects a forced shell environment policy after custom extra args", () => {
+    const result = buildCodexExecArgs({
+      model: "gpt-5.4",
+      extraArgs: [
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        'shell_environment_policy.inherit="all"',
+      ],
+    });
+
+    expect(result.args).toEqual([
+      "exec",
+      "--json",
+      "--model",
+      "gpt-5.4",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      'shell_environment_policy.inherit="all"',
+      "-c",
+      'shell_environment_policy.inherit="core"',
+      "-c",
+      "shell_environment_policy.ignore_default_excludes=true",
+      "-c",
+      'shell_environment_policy.include_only=["PAPERCLIP_*","AGENT_HOME","PWD","CODEX_HOME","HOME","PATH"]',
+      "-",
+    ]);
+  });
+
+  it("keeps the forced shell environment policy when resuming a session", () => {
+    const result = buildCodexExecArgs(
+      {
+        model: "gpt-5.4",
+      },
+      {
+        resumeSessionId: "codex-session-123",
+      },
+    );
+
+    expect(result.args).toEqual([
+      "exec",
+      "--json",
+      "--model",
+      "gpt-5.4",
+      "-c",
+      'shell_environment_policy.inherit="core"',
+      "-c",
+      "shell_environment_policy.ignore_default_excludes=true",
+      "-c",
+      'shell_environment_policy.include_only=["PAPERCLIP_*","AGENT_HOME","PWD","CODEX_HOME","HOME","PATH"]',
+      "resume",
+      "codex-session-123",
       "-",
     ]);
   });

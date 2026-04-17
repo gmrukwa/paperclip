@@ -12,6 +12,15 @@ export type BuildCodexExecArgsResult = {
   fastModeIgnoredReason: string | null;
 };
 
+const FORCED_SHELL_ENVIRONMENT_POLICY_ARGS = [
+  "-c",
+  'shell_environment_policy.inherit="core"',
+  "-c",
+  "shell_environment_policy.ignore_default_excludes=true",
+  "-c",
+  'shell_environment_policy.include_only=["PAPERCLIP_*","AGENT_HOME","PWD","CODEX_HOME","HOME","PATH"]',
+] as const;
+
 function readExtraArgs(config: unknown): string[] {
   const fromExtraArgs = asStringArray(asRecord(config).extraArgs);
   if (fromExtraArgs.length > 0) return fromExtraArgs;
@@ -58,6 +67,7 @@ export function buildCodexExecArgs(
     args.push("-c", 'service_tier="fast"', "-c", "features.fast_mode=true");
   }
   if (extraArgs.length > 0) args.push(...extraArgs);
+  args.push(...FORCED_SHELL_ENVIRONMENT_POLICY_ARGS);
   if (options.resumeSessionId) args.push("resume", options.resumeSessionId, "-");
   else args.push("-");
 
