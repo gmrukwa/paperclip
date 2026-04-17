@@ -6,7 +6,7 @@ import path from "node:path";
 import { createServer } from "node:http";
 import { and, asc, eq } from "drizzle-orm";
 import { WebSocketServer } from "ws";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   agents,
   agentWakeupRequests,
@@ -97,6 +97,17 @@ async function waitFor(condition: () => boolean | Promise<boolean>, timeoutMs = 
 
 async function closeDbClient(db: ReturnType<typeof createDb> | undefined) {
   await db?.$client?.end?.({ timeout: 0 });
+}
+
+function readEmbeddedPaperclipContext(payload: Record<string, unknown>): Record<string, unknown> {
+  const message = String(payload.message ?? "");
+  const marker = "Paperclip runtime context JSON:\n```json\n";
+  const start = message.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const afterMarker = message.slice(start + marker.length);
+  const end = afterMarker.indexOf("\n```");
+  expect(end).toBeGreaterThanOrEqual(0);
+  return JSON.parse(afterMarker.slice(0, end)) as Record<string, unknown>;
 }
 
 async function createControlledGatewayServer() {
@@ -221,19 +232,21 @@ describe("heartbeat comment wake batching", () => {
   let instance: EmbeddedPostgresInstance | null = null;
   let dataDir = "";
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     const started = await startTempDatabase();
     db = createDb(started.connectionString);
     instance = started.instance;
     dataDir = started.dataDir;
   }, 45_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await closeDbClient(db);
     await instance?.stop();
     if (dataDir) {
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
+    instance = null;
+    dataDir = "";
   });
 
   it("batches deferred comment wakes and forwards the ordered batch to the next run", async () => {
@@ -414,7 +427,8 @@ describe("heartbeat comment wake batching", () => {
       }, 90_000);
 
       const secondPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(secondPayload.paperclip).toMatchObject({
+      expect(secondPayload.paperclip).toBeUndefined();
+      expect(readEmbeddedPaperclipContext(secondPayload)).toMatchObject({
         wake: {
           commentIds: [comment2.id, comment3.id],
           latestCommentId: comment3.id,
@@ -594,7 +608,8 @@ describe("heartbeat comment wake batching", () => {
       });
 
       const secondPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(secondPayload.paperclip).toMatchObject({
+      expect(secondPayload.paperclip).toBeUndefined();
+      expect(readEmbeddedPaperclipContext(secondPayload)).toMatchObject({
         wake: {
           reason: "issue_commented",
           commentIds: [comment2.id],
@@ -680,7 +695,8 @@ describe("heartbeat comment wake batching", () => {
       expect(firstRun).not.toBeNull();
       await waitFor(() => gateway.getAgentPayloads().length === 1);
       const firstPayload = gateway.getAgentPayloads()[0] ?? {};
-      expect(firstPayload.paperclip).toMatchObject({
+      expect(firstPayload.paperclip).toBeUndefined();
+      expect(readEmbeddedPaperclipContext(firstPayload)).toMatchObject({
         wake: {
           reason: "issue_assigned",
           issue: {

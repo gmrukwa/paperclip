@@ -39,6 +39,17 @@ function buildContext(
   };
 }
 
+function readEmbeddedPaperclipContext(payload: Record<string, unknown>): Record<string, unknown> {
+  const message = String(payload.message ?? "");
+  const marker = "Paperclip runtime context JSON:\n```json\n";
+  const start = message.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const afterMarker = message.slice(start + marker.length);
+  const end = afterMarker.indexOf("\n```");
+  expect(end).toBeGreaterThanOrEqual(0);
+  return JSON.parse(afterMarker.slice(0, end)) as Record<string, unknown>;
+}
+
 async function createMockGatewayServer(options?: {
   waitPayload?: Record<string, unknown>;
 }) {
@@ -502,7 +513,8 @@ describe("openclaw gateway adapter execute", () => {
       );
       expect(String(payload?.message ?? "")).toContain("First comment");
       expect(String(payload?.message ?? "")).toContain("\"commentIds\":[\"comment-1\",\"comment-2\"]");
-      expect(payload?.paperclip).toMatchObject({
+      expect(payload?.paperclip).toBeUndefined();
+      expect(readEmbeddedPaperclipContext(payload ?? {})).toMatchObject({
         wake: {
           latestCommentId: "comment-2",
           commentIds: ["comment-1", "comment-2"],

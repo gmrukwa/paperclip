@@ -330,12 +330,6 @@ function resolvePaperclipApiUrlOverride(value: unknown): string | null {
   }
 }
 
-const DEFAULT_CLAIMED_API_KEY_PATH = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
-
-function resolveClaimedApiKeyPath(value: unknown): string {
-  return nonEmpty(value) ?? DEFAULT_CLAIMED_API_KEY_PATH;
-}
-
 function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: WakePayload): Record<string, string> {
   const paperclipApiUrlOverride = resolvePaperclipApiUrlOverride(ctx.config.paperclipApiUrl);
   const paperclipEnv: Record<string, string> = {
@@ -358,12 +352,11 @@ function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: Wak
   return paperclipEnv;
 }
 
-function buildWakeText(
+export function buildWakeText(
   payload: WakePayload,
   paperclipEnv: Record<string, string>,
   structuredWakePrompt: string,
 ): string {
-  const claimedApiKeyPath = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
   const orderedKeys = [
     "PAPERCLIP_RUN_ID",
     "PAPERCLIP_AGENT_ID",
@@ -392,12 +385,15 @@ function buildWakeText(
     "",
     "Run this procedure now. Do not guess undocumented endpoints and do not ask for additional heartbeat docs.",
     "",
-    "Set these values in your run context:",
+    "Environment rules:",
+    "- Assume PAPERCLIP_API_KEY, PAPERCLIP_AGENT_ID, PAPERCLIP_COMPANY_ID, and PAPERCLIP_API_URL are already provided by the runtime when present.",
+    "- Do not fetch PAPERCLIP_API_KEY from any filesystem path and do not invent fallback file locations.",
+    "- If PAPERCLIP_API_KEY is missing from the runtime, stop and report a missing environment variable instead of guessing.",
+    "",
+    "Set or confirm these run-scoped values in your run context:",
     ...envLines,
-    `PAPERCLIP_API_KEY=<token from ${claimedApiKeyPath}>`,
     "",
-    `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
-    "",
+    "Use the existing PAPERCLIP_API_KEY from the runtime environment.",
     `api_base=${apiBaseHint}`,
     `task_id=${payload.taskId ?? ""}`,
     `issue_id=${payload.issueId ?? ""}`,
@@ -446,6 +442,23 @@ function buildWakeText(
 function appendWakeText(baseText: string, wakeText: string): string {
   const trimmedBase = baseText.trim();
   return trimmedBase.length > 0 ? `${trimmedBase}\n\n${wakeText}` : wakeText;
+}
+
+export function appendStructuredJsonSection(
+  baseText: string,
+  heading: string,
+  value: Record<string, unknown>,
+): string {
+  if (Object.keys(value).length === 0) return baseText;
+
+  const section = [
+    heading,
+    "```json",
+    JSON.stringify(value, null, 2),
+    "```",
+  ].join("\n");
+
+  return appendWakeText(baseText, section);
 }
 
 function joinWakePayloadSections(structuredWakePrompt: string, structuredWakeJson: string): string {
@@ -1121,9 +1134,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     issueId: wakePayload.issueId,
   });
 
-  const templateMessage = nonEmpty(payloadTemplate.message) ?? nonEmpty(payloadTemplate.text);
-  const message = templateMessage ? appendWakeText(templateMessage, wakeText) : wakeText;
+  const templateMessage =
+    nonEmpty(payloadTemplate.message) ?? nonEmpty(payloadTemplate.text);
   const paperclipPayload = buildStandardPaperclipPayload(ctx, wakePayload, paperclipEnv, payloadTemplate);
+  const messageBase = templateMessage ? appendWakeText(templateMessage, wakeText) : wakeText;
+  const message = appendStructuredJsonSection(
+    messageBase,
+    "Paperclip runtime context JSON:",
+    paperclipPayload,
+  );
 
   const agentParams: Record<string, unknown> = {
     ...payloadTemplate,
@@ -1132,7 +1151,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     idempotencyKey: ctx.runId,
   };
   delete agentParams.text;
-  agentParams.paperclip = paperclipPayload;
+  delete agentParams.paperclip;
 
   const configuredAgentId = nonEmpty(ctx.config.agentId);
   if (configuredAgentId && !nonEmpty(agentParams.agentId)) {
