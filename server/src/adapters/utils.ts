@@ -27,6 +27,7 @@ export const appendWithCap = serverUtils.appendWithCap;
 export const resolvePathValue = serverUtils.resolvePathValue;
 export const renderTemplate = serverUtils.renderTemplate;
 export const redactEnvForLogs = serverUtils.redactEnvForLogs;
+export const stringifyPaperclipWakePayload = serverUtils.stringifyPaperclipWakePayload;
 export const buildPaperclipEnv = serverUtils.buildPaperclipEnv;
 export const defaultPathForPlatform = serverUtils.defaultPathForPlatform;
 export const ensurePathInEnv = serverUtils.ensurePathInEnv;
