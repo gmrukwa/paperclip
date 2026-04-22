@@ -21,13 +21,49 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const cwd = asString(config.cwd, process.cwd());
   const envConfig = parseObject(config.env);
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
-  const wakeTaskId =
-    (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
-    (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
+  const readContextString = (value: unknown): string | null =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  const linkedIssueIds = Array.isArray(context.issueIds)
+    ? context.issueIds.map(readContextString).filter((value): value is string => Boolean(value))
+    : [];
+  const paperclipWake = parseObject(context.paperclipWake);
+  const paperclipWakeIssue = parseObject(paperclipWake.issue);
+  const wakeIssueId =
+    readContextString(context.issueId) ??
+    readContextString(paperclipWakeIssue.id) ??
+    linkedIssueIds[0] ??
     null;
+  const wakeTaskId =
+    readContextString(context.taskId) ||
+    wakeIssueId ||
+    null;
+  const wakeReason = readContextString(context.wakeReason);
+  const wakeCommentId =
+    readContextString(context.wakeCommentId) ??
+    readContextString(context.commentId);
+  const approvalId = readContextString(context.approvalId);
+  const approvalStatus = readContextString(context.approvalStatus);
   const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
+  if (wakeIssueId) {
+    env.PAPERCLIP_ISSUE_ID = wakeIssueId;
+  }
   if (wakeTaskId) {
     env.PAPERCLIP_TASK_ID = wakeTaskId;
+  }
+  if (wakeReason) {
+    env.PAPERCLIP_WAKE_REASON = wakeReason;
+  }
+  if (wakeCommentId) {
+    env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
+  }
+  if (approvalId) {
+    env.PAPERCLIP_APPROVAL_ID = approvalId;
+  }
+  if (approvalStatus) {
+    env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+  }
+  if (linkedIssueIds.length > 0) {
+    env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
   if (wakePayloadJson) {
     env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
