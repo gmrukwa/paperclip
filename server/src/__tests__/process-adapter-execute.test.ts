@@ -9,6 +9,7 @@ type CapturePayload = {
   companyId: string | null;
   apiUrl: string | null;
   apiKey: string | null;
+  runId: string | null;
   issueId: string | null;
   taskId: string | null;
   wakeReason: string | null;
@@ -85,6 +86,7 @@ async function executeAndCapture(
             "  companyId: process.env.PAPERCLIP_COMPANY_ID || null,",
             "  apiUrl: process.env.PAPERCLIP_API_URL || null,",
             "  apiKey: process.env.PAPERCLIP_API_KEY || null,",
+            "  runId: process.env.PAPERCLIP_RUN_ID || null,",
             "  issueId: process.env.PAPERCLIP_ISSUE_ID || null,",
             "  taskId: process.env.PAPERCLIP_TASK_ID || null,",
             "  wakeReason: process.env.PAPERCLIP_WAKE_REASON || null,",
@@ -255,6 +257,8 @@ describe("process adapter execute", () => {
     });
 
     expect(capture.apiKey).toBe("run-jwt-token");
+    expect(capture.runId).toBe("run-process-wake");
+    expect(invocationEnv?.PAPERCLIP_RUN_ID).toBe("run-process-wake");
     expect(invocationEnv?.PAPERCLIP_API_KEY).toBe("***REDACTED***");
   });
 
@@ -277,6 +281,8 @@ describe("process adapter execute", () => {
     expect(capture.issueId).toBe(ISSUE_ID);
     expect(capture.taskId).toBe(ISSUE_ID);
     expect(capture.apiKey).toBe("issue-run-jwt-token");
+    expect(capture.runId).toBe("run-process-wake");
+    expect(invocationEnv?.PAPERCLIP_RUN_ID).toBe("run-process-wake");
     expect(invocationEnv?.PAPERCLIP_API_KEY).toBe("***REDACTED***");
   });
 
@@ -303,6 +309,7 @@ describe("process adapter execute", () => {
     expect(capture.agentId).toBe("agent-1");
     expect(capture.companyId).toBe("company-1");
     expect(capture.apiUrl).toMatch(/^http:\/\//);
+    expect(capture.runId).toBe("run-process-wake");
     expect(capture.issueId).toBe(ISSUE_ID);
     expect(capture.taskId).toBe(ISSUE_ID);
     expect(capture.wakeReason).toBe(reason);
@@ -315,6 +322,7 @@ describe("process adapter execute", () => {
       },
     });
     expect(invocationEnv).toMatchObject({
+      PAPERCLIP_RUN_ID: "run-process-wake",
       PAPERCLIP_ISSUE_ID: ISSUE_ID,
       PAPERCLIP_TASK_ID: ISSUE_ID,
       PAPERCLIP_WAKE_REASON: reason,

@@ -23,6 +23,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
+  env.PAPERCLIP_RUN_ID = runId;
   const readContextString = (value: unknown): string | null =>
     typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
   const linkedIssueIds = Array.isArray(context.issueIds)
