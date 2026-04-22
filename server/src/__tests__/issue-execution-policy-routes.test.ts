@@ -146,4 +146,47 @@ describe("issue execution policy routes", () => {
     expect(updatePatch.executionState).toBeUndefined();
     expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
   });
+
+  it("returns 422 instead of updating when approving a pending review without a comment", async () => {
+    const policy = normalizeIssueExecutionPolicy({
+      stages: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          type: "review",
+          participants: [{ type: "user", userId: "local-board" }],
+        },
+      ],
+    })!;
+    const issue = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      companyId: "company-1",
+      status: "in_review",
+      assigneeAgentId: null,
+      assigneeUserId: "local-board",
+      createdByUserId: "local-board",
+      identifier: "PAP-999",
+      title: "Execution policy approval",
+      executionPolicy: policy,
+      executionState: {
+        status: "pending",
+        currentStageId: policy.stages[0]!.id,
+        currentStageIndex: 0,
+        currentStageType: "review",
+        currentParticipant: { type: "user", userId: "local-board", agentId: null },
+        returnAssignee: { type: "agent", agentId: "33333333-3333-4333-8333-333333333333", userId: null },
+        completedStageIds: [],
+        lastDecisionId: null,
+        lastDecisionOutcome: null,
+      },
+    };
+    mockIssueService.getById.mockResolvedValue(issue);
+
+    const res = await request(await createApp())
+      .patch("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .send({ status: "done" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("Approving a review or approval stage requires a comment");
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+  });
 });

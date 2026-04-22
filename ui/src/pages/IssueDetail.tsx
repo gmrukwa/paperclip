@@ -78,10 +78,20 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { formatIssueActivityAction } from "@/lib/activity-format";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
 import { shouldRenderRichSubIssuesSection } from "../lib/issue-detail-subissues";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
+import { getIssueStatusDecisionPrompt, type IssueStatusDecisionPrompt } from "../lib/issue-status-decision";
 import {
   Activity as ActivityIcon,
   Archive,
@@ -118,6 +128,10 @@ type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
   interruptedRunId?: string | null;
   queueState?: "queued";
   queueTargetRunId?: string | null;
+};
+type PendingStatusDecision = {
+  data: Record<string, unknown>;
+  prompt: IssueStatusDecisionPrompt;
 };
 
 const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
@@ -888,6 +902,8 @@ export function IssueDetail() {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [optimisticComments, setOptimisticComments] = useState<OptimisticIssueComment[]>([]);
   const [pendingCommentComposerFocusKey, setPendingCommentComposerFocusKey] = useState(0);
+  const [pendingStatusDecision, setPendingStatusDecision] = useState<PendingStatusDecision | null>(null);
+  const [statusDecisionComment, setStatusDecisionComment] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastMarkedReadIssueIdRef = useRef<string | null>(null);
   const commentComposerRef = useRef<IssueChatComposerHandle | null>(null);
@@ -1258,9 +1274,36 @@ export function IssueDetail() {
       }
     },
   });
-  const handleIssuePropertiesUpdate = useCallback((data: Record<string, unknown>) => {
+  const requestIssueUpdate = useCallback((data: Record<string, unknown>) => {
+    const requestedStatus = typeof data.status === "string" ? data.status : null;
+    const prompt = issue && requestedStatus
+      ? getIssueStatusDecisionPrompt(issue, requestedStatus, currentUserId)
+      : null;
+    if (prompt) {
+      setPendingStatusDecision({ data, prompt });
+      setStatusDecisionComment("");
+      return;
+    }
     updateIssue.mutate(data);
-  }, [updateIssue.mutate]);
+  }, [currentUserId, issue, updateIssue.mutate]);
+  const handleIssuePropertiesUpdate = useCallback((data: Record<string, unknown>) => {
+    requestIssueUpdate(data);
+  }, [requestIssueUpdate]);
+  const submitStatusDecision = useCallback(async () => {
+    if (!pendingStatusDecision) return;
+    const comment = statusDecisionComment.trim();
+    if (!comment) return;
+    try {
+      await updateIssue.mutateAsync({
+        ...pendingStatusDecision.data,
+        comment,
+      });
+      setPendingStatusDecision(null);
+      setStatusDecisionComment("");
+    } catch {
+      // The mutation already restores optimistic state and shows the API error toast.
+    }
+  }, [pendingStatusDecision, statusDecisionComment, updateIssue.mutateAsync]);
 
   const updateChildIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
@@ -2205,7 +2248,7 @@ export function IssueDetail() {
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <StatusIcon
             status={issue.status}
-            onChange={(status) => updateIssue.mutate({ status })}
+            onChange={(status) => requestIssueUpdate({ status })}
           />
           <PriorityIcon
             priority={issue.priority}
@@ -2700,13 +2743,46 @@ export function IssueDetail() {
                 issue={issue}
                 childIssues={childIssues}
                 onAddSubIssue={openNewSubIssue}
-                onUpdate={(data) => updateIssue.mutate(data)}
+                onUpdate={handleIssuePropertiesUpdate}
                 inline
               />
             </div>
           </ScrollArea>
         </SheetContent>
       </Sheet>
+      <Dialog
+        open={Boolean(pendingStatusDecision)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setPendingStatusDecision(null);
+          setStatusDecisionComment("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{pendingStatusDecision?.prompt.title ?? "Add decision comment"}</DialogTitle>
+            <DialogDescription>
+              {pendingStatusDecision?.prompt.description ?? "Add the required comment before changing issue status."}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={statusDecisionComment}
+            onChange={(event) => setStatusDecisionComment(event.target.value)}
+            placeholder="Write the decision comment..."
+            rows={4}
+            autoFocus
+          />
+          <DialogFooter showCloseButton>
+            <Button
+              type="button"
+              onClick={() => void submitStatusDecision()}
+              disabled={!statusDecisionComment.trim() || updateIssue.isPending}
+            >
+              {updateIssue.isPending ? "Saving..." : pendingStatusDecision?.prompt.submitLabel ?? "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ScrollToBottom />
     </div>
   );
