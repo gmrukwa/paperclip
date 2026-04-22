@@ -8,6 +8,7 @@ type CapturePayload = {
   agentId: string | null;
   companyId: string | null;
   apiUrl: string | null;
+  apiKey: string | null;
   issueId: string | null;
   taskId: string | null;
   wakeReason: string | null;
@@ -46,7 +47,13 @@ function issueWakeContext(
   };
 }
 
-async function executeAndCapture(context: Record<string, unknown>) {
+async function executeAndCapture(
+  context: Record<string, unknown>,
+  options: {
+    authToken?: string;
+    env?: Record<string, string>;
+  } = {},
+) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-process-execute-wake-"));
   const capturePath = path.join(root, "capture.json");
   let invocationEnv: Record<string, string> | null = null;
@@ -77,6 +84,7 @@ async function executeAndCapture(context: Record<string, unknown>) {
             "  agentId: process.env.PAPERCLIP_AGENT_ID || null,",
             "  companyId: process.env.PAPERCLIP_COMPANY_ID || null,",
             "  apiUrl: process.env.PAPERCLIP_API_URL || null,",
+            "  apiKey: process.env.PAPERCLIP_API_KEY || null,",
             "  issueId: process.env.PAPERCLIP_ISSUE_ID || null,",
             "  taskId: process.env.PAPERCLIP_TASK_ID || null,",
             "  wakeReason: process.env.PAPERCLIP_WAKE_REASON || null,",
@@ -92,6 +100,7 @@ async function executeAndCapture(context: Record<string, unknown>) {
         cwd: root,
         env: {
           PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+          ...options.env,
         },
       },
       context,
@@ -99,6 +108,7 @@ async function executeAndCapture(context: Record<string, unknown>) {
       onMeta: async (meta) => {
         invocationEnv = meta.env ?? null;
       },
+      authToken: options.authToken,
     });
 
     const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
@@ -235,6 +245,56 @@ const issueWakeCases = [
 ] as const;
 
 describe("process adapter execute", () => {
+  it("injects PAPERCLIP_API_KEY from authToken for non-issue heartbeat wakes", async () => {
+    const { capture, invocationEnv } = await executeAndCapture({
+      source: "scheduler",
+      reason: "interval_elapsed",
+      wakeReason: "heartbeat_timer",
+    }, {
+      authToken: "run-jwt-token",
+    });
+
+    expect(capture.apiKey).toBe("run-jwt-token");
+    expect(invocationEnv?.PAPERCLIP_API_KEY).toBe("***REDACTED***");
+  });
+
+  it("injects PAPERCLIP_API_KEY from authToken for issue-scoped wakes", async () => {
+    const { capture, invocationEnv } = await executeAndCapture(
+      issueWakeContext("execution_approval_requested", {
+        taskId: ISSUE_ID,
+        executionStage: {
+          wakeRole: "approver",
+          stageId: "stage-approval",
+          stageType: "approval",
+          allowedActions: ["approve", "request_changes"],
+        },
+      }),
+      {
+        authToken: "issue-run-jwt-token",
+      },
+    );
+
+    expect(capture.issueId).toBe(ISSUE_ID);
+    expect(capture.taskId).toBe(ISSUE_ID);
+    expect(capture.apiKey).toBe("issue-run-jwt-token");
+    expect(invocationEnv?.PAPERCLIP_API_KEY).toBe("***REDACTED***");
+  });
+
+  it("does not override explicit PAPERCLIP_API_KEY from adapter env", async () => {
+    const { capture } = await executeAndCapture({
+      source: "scheduler",
+      reason: "interval_elapsed",
+      wakeReason: "heartbeat_timer",
+    }, {
+      authToken: "run-jwt-token",
+      env: {
+        PAPERCLIP_API_KEY: "configured-api-key",
+      },
+    });
+
+    expect(capture.apiKey).toBe("configured-api-key");
+  });
+
   it.each(issueWakeCases)("sets PAPERCLIP_ISSUE_ID for %s wake", async (reason, context) => {
     const { result, capture, invocationEnv } = await executeAndCapture(context);
 
